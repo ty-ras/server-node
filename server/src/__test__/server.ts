@@ -40,6 +40,7 @@ export const testServer = async (
     | 204
     | 200
     | 403
+    | 500
     | string, // suffix for value of content-type of response
   // eslint-disable-next-line sonarjs/cognitive-complexity
 ) => {
@@ -47,8 +48,8 @@ export const testServer = async (
   const isProtocolError = info === 403;
   const state = "State";
   const responseData = info === 204 ? undefined : state;
-  t.plan(isError || isProtocolError ? 2 : 1);
-  const noRequestBody = isError || info === 403;
+  const noRequestBody = isError || info === 403 || info === 500;
+  t.plan(isError || isProtocolError || info === 500 ? 2 : 1);
   const responseIsStreamed = info === 200;
   const serverObj = createServer([
     getAppEndpoint(
