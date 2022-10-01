@@ -1,0 +1,229 @@
+import type * as ava from "ava";
+import getPort from "@ava/get-port";
+
+import * as destroy from "./destroy";
+import * as request from "./request";
+
+import type * as ep from "@ty-ras/endpoint";
+
+import * as http from "http";
+import * as http2 from "http2";
+import * as net from "net";
+import * as rawBody from "raw-body";
+
+type AnyHttpServer = http.Server | http2.Http2Server;
+
+export const testServer = async (
+  t: ava.ExecutionContext,
+  createServer: (endpoint: Array<ep.AppEndpoint<unknown, never>>) =>
+    | AnyHttpServer
+    | {
+        server: AnyHttpServer;
+        customListen: (host: string, port: number) => Promise<void>;
+      },
+  info:
+    | undefined
+    | {
+        regExp: RegExp;
+        expectedStatusCode: number;
+      }
+    | 204
+    | 403
+    | string, // suffix for value of content-type of response
+) => {
+  const isError = typeof info === "object";
+  const isProtocolError = info === 403;
+  const state = "State";
+  const responseData = info === 204 ? undefined : state;
+  t.plan(isError || isProtocolError ? 2 : 1);
+  const noRequestBody = isError || info === 403;
+  const serverObj = createServer([
+    getAppEndpoint(
+      isError ? info?.regExp : /^\/(?<group>path)$/,
+      isProtocolError ? info : undefined,
+      state,
+      responseData,
+      noRequestBody,
+    ),
+  ]);
+  const server = serverObj instanceof net.Server ? serverObj : serverObj.server;
+  // AVA runs tests in parallel -> use plugin to get whatever available port
+  const host = "localhost";
+  const port = await getPort();
+  const destroyServer = destroy.createDestroyCallback(server);
+  try {
+    // Start the server
+    await (serverObj instanceof net.Server
+      ? listenAsync(server, host, port)
+      : serverObj.customListen(host, port));
+    const requestOpts: http.RequestOptions = {
+      hostname: host,
+      port,
+      method: "GET",
+      path: "/path",
+    };
+    const isHttp2 = !(server instanceof http.Server);
+    if (noRequestBody) {
+      await performFailingTest(
+        t,
+        requestOpts,
+        isError ? info.expectedStatusCode : info,
+        isHttp2,
+      );
+    } else {
+      await performSuccessfulTest(
+        t,
+        requestOpts,
+        responseData,
+        typeof info === "string" ? info : "",
+        isHttp2,
+      );
+    }
+  } finally {
+    try {
+      // Shut down the server
+      await destroyServer();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("Failed to destroy server, the test might become stuck...");
+    }
+  }
+};
+
+const getAppEndpoint = (
+  regExp: RegExp,
+  protocolError: number | undefined,
+  state: string,
+  output: string | undefined,
+  noRequestBody: boolean,
+): ep.AppEndpoint<unknown, never> => ({
+  getRegExpAndHandler: () => ({
+    url: regExp,
+    handler: () => {
+      const retVal: ep.StaticAppEndpointHandler<unknown> = {
+        contextValidator: {
+          validator: (ctx) =>
+            protocolError === undefined
+              ? {
+                  error: "none",
+                  data: ctx,
+                }
+              : {
+                  error: "protocol-error",
+                  statusCode: 403,
+                  body: undefined,
+                },
+          getState: () => state,
+        },
+        handler: () => ({
+          error: "none",
+          data: {
+            contentType: JSON_CONTENT_TYPE,
+            output,
+            headers: {
+              "response-header-name": "response-header-value",
+            },
+          },
+        }),
+      };
+      if (!noRequestBody) {
+        retVal.bodyValidator = async ({ contentType, input }) => {
+          const bodyString = await rawBody.default(input, {
+            encoding: "utf8",
+          });
+          return JSON.parse(bodyString) === "input"
+            ? {
+                error: "none",
+                data: {
+                  contentType,
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                  content: "input",
+                },
+              }
+            : {
+                error: "error",
+                errorInfo: "Info",
+                getHumanReadableMessage: () => "",
+              };
+        };
+      }
+      return {
+        found: "handler",
+        handler: retVal,
+      };
+    },
+  }),
+  getMetadata: () => {
+    throw new Error("This should never be called.");
+  },
+});
+
+const listenAsync = (server: net.Server, host: string, port: number) =>
+  new Promise<void>((resolve, reject) => {
+    try {
+      server.listen(port, host, () => resolve());
+    } catch (e) {
+      reject(e);
+    }
+  });
+
+const performSuccessfulTest = async (
+  t: ava.ExecutionContext,
+  requestOpts: http.RequestOptions,
+  responseData: string | undefined,
+  contentTypeSuffix: string,
+  isHttp2: boolean,
+) => {
+  requestOpts.method = "POST";
+  requestOpts.headers = {
+    "Content-Type": JSON_CONTENT_TYPE,
+  };
+  // Send the request
+  const response = await (isHttp2
+    ? request.requestAsync2(requestOpts, JSON.stringify("input"))
+    : request.requestAsync(requestOpts, (writeable) => {
+        writeable.write(JSON.stringify("input"));
+        return Promise.resolve();
+      }));
+  // Let's not test these headers as they vary every time
+  delete response.headers["date"];
+  delete response.headers["etag"];
+  // This is not present in http2
+  delete response.headers["connection"];
+  const expectedHeaders: Record<string, string> = {
+    "response-header-name": "response-header-value",
+  };
+  if (responseData !== undefined) {
+    expectedHeaders["content-length"] = "5";
+    expectedHeaders[
+      "content-type"
+    ] = `${JSON_CONTENT_TYPE}${contentTypeSuffix}`;
+  }
+  t.deepEqual(response, {
+    data: responseData,
+    headers: expectedHeaders,
+  });
+};
+
+const performFailingTest = async (
+  t: ava.ExecutionContext,
+  requestOpts: http.RequestOptions,
+  expectedStatusCode: number,
+  isHttp2: boolean,
+) => {
+  const thrownError = await t.throwsAsync<request.RequestError>(
+    async () =>
+      await (isHttp2
+        ? request.requestAsync2(requestOpts)
+        : request.requestAsync(requestOpts)),
+    {
+      instanceOf: request.RequestError,
+      message: request.getErrorMessage(expectedStatusCode),
+    },
+  );
+  if (thrownError) {
+    t.deepEqual(thrownError.statusCode, expectedStatusCode);
+  }
+};
+
+const JSON_CONTENT_TYPE = "application/json";

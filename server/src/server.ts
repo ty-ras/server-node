@@ -58,11 +58,11 @@ export function createServer<TState>(
     );
     if (
       options &&
-      secureHttp1OptionKeys.some((propKey) => propKey in options)
+      secureHttp2OptionKeys.some((propKey) => propKey in options)
     ) {
-      retVal = http2.createServer(options, httpHandler);
+      retVal = http2.createSecureServer(options, httpHandler);
     } else {
-      retVal = http2.createSecureServer(options ?? {}, httpHandler);
+      retVal = http2.createServer(options ?? {}, httpHandler);
     }
   } else {
     const { endpoints, options, ...handlerOptions } = opts;
@@ -78,7 +78,7 @@ export function createServer<TState>(
     );
     if (
       options &&
-      secureHttp2OptionKeys.some((propKey) => propKey in options)
+      secureHttp1OptionKeys.some((propKey) => propKey in options)
     ) {
       retVal = https.createServer(options, httpHandler);
     } else {
@@ -95,6 +95,8 @@ export type HTTP1ServerOptions = {
 export type HTTP2ServerOptions = {
   httpVersion: 2;
 };
+
+export type HTTPVersion = 1 | 2;
 
 export type HTTP1ServerContext = Context<
   http.IncomingMessage,
@@ -124,7 +126,40 @@ export interface ServerCreationOptions<TContext, TState, TOPtions> {
 const secureHttp1OptionKeys: ReadonlyArray<keyof tls.TlsOptions> = [
   "key",
   "cert",
+  "pfx",
+  "passphrase",
+  "rejectUnauthorized",
+  "ciphers",
+  "ca",
+  "requestCert",
+  "secureContext",
+  "secureOptions",
+  "secureProtocol",
+  "sigalgs",
+  "ticketKeys",
+  "crl",
+  "clientCertEngine",
+  "dhparam",
+  "ecdhCurve",
+  "allowHalfOpen",
+  "handshakeTimeout",
+  "honorCipherOrder",
+  "keepAlive",
+  "keepAliveInitialDelay",
+  "maxVersion",
+  "minVersion",
+  "noDelay",
+  "pauseOnConnect",
+  "privateKeyEngine",
+  "privateKeyIdentifier",
+  "pskCallback",
+  "pskIdentityHint",
+  "sessionIdContext",
+  "sessionTimeout",
+  "ALPNProtocols",
+  "SNICallback",
 ];
+
 const secureHttp2OptionKeys: ReadonlyArray<
   "allowHTTP1" | "origins" | keyof tls.TlsOptions
 > = ["allowHTTP1", "origins", ...secureHttp1OptionKeys];
@@ -151,7 +186,7 @@ const createHandleHttpRequest =
         }
       >;
     },
-  ): ((req: TRequest, res: TResponse) => Promise<void>) =>
+  ): HTTP1Or2Handler<TRequest, TResponse> =>
   async (req: TRequest, res: TResponse) => {
     try {
       const ctx = { req, res };
@@ -180,9 +215,12 @@ const createHandleHttpRequest =
               if (content instanceof stream.Readable) {
                 await stream.promises.pipeline(content, res);
               } else {
+                const buffer =
+                  typeof content === "string" ? Buffer.from(content) : content;
+                res.setHeader("Content-Length", buffer.byteLength);
                 // We need to cast to Writable, as otherwise we will get compilation error:
                 //  Each member of the union type [...] has signatures, but none of those signatures are compatible with each other.
-                (res as stream.Writable).write(content);
+                (res as stream.Writable).write(buffer);
               }
             }
           },
@@ -201,15 +239,16 @@ const createHandleHttpRequest =
     }
   };
 
+type HTTP1Or2Handler<TRequest, TResponse> = (
+  req: TRequest,
+  res: TResponse,
+) => Promise<void>;
+
 const asyncToVoid =
-  <
-    T extends (
-      ...args: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any
-    ) => Promise<unknown>,
-  >(
-    asyncCallback: T,
-  ): ((...args: Parameters<T>) => void) =>
+  <TRequest, TResponse>(
+    asyncCallback: HTTP1Or2Handler<TRequest, TResponse>,
+  ): ((...args: Parameters<typeof asyncCallback>) => void) =>
   (...args) => {
-    void asyncCallback(args);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    void asyncCallback(...args);
   };
