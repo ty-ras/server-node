@@ -1,4 +1,4 @@
-import type * as ep from "@ty-ras/endpoint";
+import * as ep from "@ty-ras/endpoint";
 import * as prefix from "@ty-ras/endpoint-prefix";
 import * as server from "@ty-ras/server";
 
@@ -9,78 +9,98 @@ import * as stream from "stream";
 import type * as tls from "tls";
 
 export function createServer<TState>(
-  opts: ServerCreationOptions<HTTP1ServerContext, TState, http.ServerOptions> &
+  opts: ServerCreationOptions<
+    HTTP1ServerContext,
+    TState,
+    http.ServerOptions,
+    false
+  > &
     HTTP1ServerOptions,
 ): http.Server;
 export function createServer<TState>(
-  opts: ServerCreationOptions<HTTP1ServerContext, TState, https.ServerOptions> &
+  opts: ServerCreationOptions<
+    HTTP1ServerContext,
+    TState,
+    https.ServerOptions,
+    true
+  > &
     HTTP1ServerOptions,
 ): https.Server;
 export function createServer<TState>(
-  opts: ServerCreationOptions<HTTP2ServerContext, TState, http2.ServerOptions> &
+  opts: ServerCreationOptions<
+    HTTP2ServerContext,
+    TState,
+    http2.ServerOptions,
+    false
+  > &
     HTTP2ServerOptions,
 ): http2.Http2Server;
 export function createServer<TState>(
   opts: ServerCreationOptions<
     HTTP2ServerContext,
     TState,
-    http2.SecureServerOptions
+    http2.SecureServerOptions,
+    true
   > &
     HTTP2ServerOptions,
 ): http2.Http2SecureServer;
 export function createServer<TState>(
   opts:
-    | (ServerCreationOptions<HTTP1ServerContext, TState, http.ServerOptions> &
+    | (ServerCreationOptions<
+        HTTP1ServerContext,
+        TState,
+        http.ServerOptions,
+        false
+      > &
         HTTP1ServerOptions)
-    | (ServerCreationOptions<HTTP1ServerContext, TState, https.ServerOptions> &
+    | (ServerCreationOptions<
+        HTTP1ServerContext,
+        TState,
+        https.ServerOptions,
+        true
+      > &
         HTTP1ServerOptions)
-    | (ServerCreationOptions<HTTP2ServerContext, TState, http2.ServerOptions> &
+    | (ServerCreationOptions<
+        HTTP2ServerContext,
+        TState,
+        http2.ServerOptions,
+        false
+      > &
         HTTP2ServerOptions)
     | (ServerCreationOptions<
         HTTP2ServerContext,
         TState,
-        http2.SecureServerOptions
+        http2.SecureServerOptions,
+        true
       > &
         HTTP2ServerOptions),
 ) {
   let retVal;
   if ("httpVersion" in opts && opts.httpVersion === 2) {
-    const { endpoints, options, ...handlerOptions } = opts;
-    const regExpAndHandler = prefix
-      .atPrefix("", ...endpoints)
-      .getRegExpAndHandler("");
+    const { endpoints, options, secure, ...handlerOptions } = opts;
     const httpHandler = asyncToVoid(
       createHandleHttpRequest<
         TState,
         http2.Http2ServerRequest,
         http2.Http2ServerResponse
-      >(handlerOptions, regExpAndHandler),
+      >(handlerOptions, getRegExpAndHandler(endpoints)),
     );
-    if (
-      options &&
-      secureHttp2OptionKeys.some((propKey) => propKey in options)
-    ) {
-      retVal = http2.createSecureServer(options, httpHandler);
+    if (isSecure(secure, options, 2)) {
+      retVal = http2.createSecureServer(options ?? {}, httpHandler);
     } else {
       retVal = http2.createServer(options ?? {}, httpHandler);
     }
   } else {
-    const { endpoints, options, ...handlerOptions } = opts;
-    const regExpAndHandler = prefix
-      .atPrefix("", ...endpoints)
-      .getRegExpAndHandler("");
+    const { endpoints, options, secure, ...handlerOptions } = opts;
     const httpHandler = asyncToVoid(
       createHandleHttpRequest<
         TState,
         http.IncomingMessage,
         http.ServerResponse
-      >(handlerOptions, regExpAndHandler),
+      >(handlerOptions, getRegExpAndHandler(endpoints)),
     );
-    if (
-      options &&
-      secureHttp1OptionKeys.some((propKey) => propKey in options)
-    ) {
-      retVal = https.createServer(options, httpHandler);
+    if (isSecure(secure, options, 1)) {
+      retVal = https.createServer(options ?? {}, httpHandler);
     } else {
       retVal = http.createServer(options ?? {}, httpHandler);
     }
@@ -113,14 +133,20 @@ export interface Context<TRequest, TResponse> {
   res: TResponse;
 }
 
-export interface ServerCreationOptions<TContext, TState, TOPtions> {
+export interface ServerCreationOptions<
+  TContext,
+  TState,
+  TOPtions,
+  TSecure extends boolean,
+> {
   endpoints: Array<
     ep.AppEndpoint<TContext & { state: TState }, Record<string, unknown>>
   >;
-  createState?: (context: TContext) => ep.MaybePromise<TState>;
-  events?: server.ServerEventEmitter<TContext, TState>;
-  options?: TOPtions;
-  onStateCreationOrServerException?: (error: unknown) => void;
+  createState?: ((context: TContext) => ep.MaybePromise<TState>) | undefined;
+  events?: server.ServerEventEmitter<TContext, TState> | undefined;
+  options?: TOPtions | undefined;
+  onStateCreationOrServerException?: ((error: unknown) => void) | undefined;
+  secure?: TSecure | undefined;
 }
 
 const secureHttp1OptionKeys: ReadonlyArray<keyof tls.TlsOptions> = [
@@ -175,7 +201,7 @@ const createHandleHttpRequest =
       events,
       onStateCreationOrServerException,
     }: Pick<
-      ServerCreationOptions<Context<TRequest, TResponse>, TState, never>,
+      ServerCreationOptions<Context<TRequest, TResponse>, TState, never, never>,
       "createState" | "events" | "onStateCreationOrServerException"
     >,
     regExpAndHandler: {
@@ -232,6 +258,7 @@ const createHandleHttpRequest =
       } catch {
         // Nothing we can do here anymore
       }
+      res.statusCode = 500;
     } finally {
       if (!res.writableEnded) {
         res.end();
@@ -252,3 +279,18 @@ const asyncToVoid =
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     void asyncCallback(...args);
   };
+
+const getRegExpAndHandler = <TContext>(
+  endpoints: Array<ep.AppEndpoint<TContext, Record<string, unknown>>>,
+) => prefix.atPrefix("", ...endpoints).getRegExpAndHandler("");
+
+const isSecure = (
+  secure: boolean | undefined,
+  options: object | undefined,
+  version: 1 | 2,
+) =>
+  secure ||
+  (options &&
+    (version === 1 ? secureHttp1OptionKeys : secureHttp2OptionKeys).some(
+      (propKey) => propKey in options,
+    ));

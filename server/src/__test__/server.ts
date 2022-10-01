@@ -10,7 +10,7 @@ import * as http from "http";
 import * as http2 from "http2";
 import * as https from "https";
 import * as net from "net";
-import type * as stream from "stream";
+import * as stream from "stream";
 import * as rawBody from "raw-body";
 
 type AnyHttpServer =
@@ -38,6 +38,7 @@ export const testServer = async (
         expectedStatusCode: number;
       }
     | 204
+    | 200
     | 403
     | string, // suffix for value of content-type of response
   // eslint-disable-next-line sonarjs/cognitive-complexity
@@ -48,12 +49,13 @@ export const testServer = async (
   const responseData = info === 204 ? undefined : state;
   t.plan(isError || isProtocolError ? 2 : 1);
   const noRequestBody = isError || info === 403;
+  const responseIsStreamed = info === 200;
   const serverObj = createServer([
     getAppEndpoint(
       isError ? info?.regExp : /^\/(?<group>path)$/,
       isProtocolError ? info : undefined,
       state,
-      responseData,
+      responseIsStreamed ? stream.Readable.from([responseData]) : responseData,
       noRequestBody,
     ),
   ]);
@@ -97,6 +99,7 @@ export const testServer = async (
         responseData,
         typeof info === "string" ? info : "",
         isHttp2,
+        responseIsStreamed,
       );
     }
   } finally {
@@ -114,7 +117,7 @@ const getAppEndpoint = (
   regExp: RegExp,
   protocolError: number | undefined,
   state: string,
-  output: string | undefined,
+  output: string | stream.Readable | undefined,
   noRequestBody: boolean,
 ): ep.AppEndpoint<unknown, never> => ({
   getRegExpAndHandler: () => ({
@@ -193,6 +196,7 @@ const performSuccessfulTest = async (
   responseData: string | undefined,
   contentTypeSuffix: string,
   isHttp2: boolean,
+  responseWasStreamed: boolean,
 ) => {
   requestOpts.method = "POST";
   requestOpts.headers = {
@@ -211,10 +215,16 @@ const performSuccessfulTest = async (
     "response-header-name": "response-header-value",
   };
   if (responseData !== undefined) {
-    expectedHeaders["content-length"] = "5";
     expectedHeaders[
       "content-type"
     ] = `${JSON_CONTENT_TYPE}${contentTypeSuffix}`;
+    if (responseWasStreamed) {
+      if (!isHttp2) {
+        expectedHeaders["transfer-encoding"] = "chunked";
+      }
+    } else {
+      expectedHeaders["content-length"] = "5";
+    }
   }
   t.deepEqual(response, {
     data: responseData,
