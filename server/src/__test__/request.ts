@@ -1,4 +1,5 @@
 import * as http from "http";
+import * as https from "https";
 import * as http2 from "http2";
 import type * as stream from "stream";
 
@@ -10,8 +11,18 @@ export const requestAsync = (
     headers: http.IncomingHttpHeaders;
     data: string | undefined;
   }>((resolve, reject) => {
+    const agent =
+      opts.protocol === "http:"
+        ? undefined
+        : new https.Agent({
+            // host: opts.hostname ?? "",
+            // port:
+            //   typeof opts.port === "string" ? parseInt(opts.port) : opts.port ?? 0,
+            // path: opts.path ?? "",
+            rejectUnauthorized: false,
+          });
     const writeable = http
-      .request(opts, (resp) => {
+      .request({ ...opts, agent }, (resp) => {
         resp.setEncoding("utf8");
         let data: string | undefined;
         const headers = resp.headers;
@@ -48,15 +59,21 @@ export const requestAsync = (
     }
   });
 
-export const requestAsync2 = (opts: http.RequestOptions, body?: string) =>
+export const requestAsync2 = (
+  opts: http.RequestOptions,
+  write?: (writeable: stream.Writable) => Promise<void>,
+) =>
   new Promise<{
     headers: http2.IncomingHttpHeaders;
     data: string | undefined;
     // eslint-disable-next-line sonarjs/cognitive-complexity
   }>((resolve, reject) => {
-    const session = http2.connect(`http://${opts.hostname}:${opts.port}`, {
-      // rejectUnauthorized: false,
-    });
+    const session = http2.connect(
+      `${opts.protocol}//${opts.hostname}:${opts.port}`,
+      {
+        rejectUnauthorized: false,
+      },
+    );
     const request = session.request({
       ...(opts.headers ?? {}),
       // [http2.constants.HTTP2_HEADER_SCHEME]: "https",
@@ -64,11 +81,6 @@ export const requestAsync2 = (opts: http.RequestOptions, body?: string) =>
       [http2.constants.HTTP2_HEADER_METHOD]: opts.method ?? "",
     });
     request.setEncoding("utf8");
-
-    if (body !== undefined && opts.method !== "GET") {
-      request.write(body);
-    }
-    request.end();
 
     let headers: http2.IncomingHttpHeaders = {};
     request.on("response", (hdrs) => {
@@ -107,6 +119,12 @@ export const requestAsync2 = (opts: http.RequestOptions, body?: string) =>
       session.destroy();
       reject(error);
     });
+
+    if (write && opts.method !== "GET") {
+      void awaitAndThen(write(request), () => request.end(), reject);
+    } else {
+      request.end();
+    }
   });
 
 const awaitAndThen = async (

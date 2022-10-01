@@ -8,19 +8,29 @@ import type * as ep from "@ty-ras/endpoint";
 
 import * as http from "http";
 import * as http2 from "http2";
+import * as https from "https";
 import * as net from "net";
+import type * as stream from "stream";
 import * as rawBody from "raw-body";
 
-type AnyHttpServer = http.Server | http2.Http2Server;
+type AnyHttpServer =
+  | http.Server
+  | https.Server
+  | {
+      server:
+        | http.Server
+        | https.Server
+        | http2.Http2Server
+        | http2.Http2SecureServer;
+      secure: boolean; // Only used if http 2
+      customListen?: (host: string, port: number) => Promise<void>;
+    };
 
 export const testServer = async (
   t: ava.ExecutionContext,
-  createServer: (endpoint: Array<ep.AppEndpoint<unknown, never>>) =>
-    | AnyHttpServer
-    | {
-        server: AnyHttpServer;
-        customListen: (host: string, port: number) => Promise<void>;
-      },
+  createServer: (
+    endpoint: Array<ep.AppEndpoint<unknown, never>>,
+  ) => AnyHttpServer,
   info:
     | undefined
     | {
@@ -30,6 +40,7 @@ export const testServer = async (
     | 204
     | 403
     | string, // suffix for value of content-type of response
+  // eslint-disable-next-line sonarjs/cognitive-complexity
 ) => {
   const isError = typeof info === "object";
   const isProtocolError = info === 403;
@@ -46,23 +57,32 @@ export const testServer = async (
       noRequestBody,
     ),
   ]);
-  const server = serverObj instanceof net.Server ? serverObj : serverObj.server;
+  const isDirectlyServer =
+    serverObj instanceof https.Server || serverObj instanceof http.Server;
+  const server = isDirectlyServer ? serverObj : serverObj.server;
   // AVA runs tests in parallel -> use plugin to get whatever available port
   const host = "localhost";
   const port = await getPort();
   const destroyServer = destroy.createDestroyCallback(server);
   try {
     // Start the server
-    await (serverObj instanceof net.Server
+    await (isDirectlyServer || !serverObj.customListen
       ? listenAsync(server, host, port)
       : serverObj.customListen(host, port));
     const requestOpts: http.RequestOptions = {
+      protocol:
+        server instanceof https.Server ||
+        (!isDirectlyServer && serverObj.secure)
+          ? "https:"
+          : "http:",
       hostname: host,
       port,
       method: "GET",
       path: "/path",
     };
-    const isHttp2 = !(server instanceof http.Server);
+    const isHttp2 = !(
+      server instanceof http.Server || server instanceof https.Server
+    );
     if (noRequestBody) {
       await performFailingTest(
         t,
@@ -180,11 +200,8 @@ const performSuccessfulTest = async (
   };
   // Send the request
   const response = await (isHttp2
-    ? request.requestAsync2(requestOpts, JSON.stringify("input"))
-    : request.requestAsync(requestOpts, (writeable) => {
-        writeable.write(JSON.stringify("input"));
-        return Promise.resolve();
-      }));
+    ? request.requestAsync2(requestOpts, writeInput)
+    : request.requestAsync(requestOpts, writeInput));
   // Let's not test these headers as they vary every time
   delete response.headers["date"];
   delete response.headers["etag"];
@@ -227,3 +244,8 @@ const performFailingTest = async (
 };
 
 const JSON_CONTENT_TYPE = "application/json";
+
+const writeInput = (writable: stream.Writable) => {
+  writable.write(JSON.stringify("input"));
+  return Promise.resolve();
+};
