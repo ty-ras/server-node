@@ -22,26 +22,6 @@ export const generateKeyAndCert = () => {
       name: "commonName",
       value: "example.org",
     },
-    // {
-    //   name: "countryName",
-    //   value: "US",
-    // },
-    // {
-    //   shortName: "ST",
-    //   value: "",
-    // },
-    // {
-    //   name: "localityName",
-    //   value: "",
-    // },
-    // {
-    //   name: "organizationName",
-    //   value: "Texas Toast Coffee Shop",
-    // },
-    // {
-    //   shortName: "OU",
-    //   value: "Test",
-    // },
   ];
   cert.setSubject(attrs);
   cert.setIssuer(attrs);
