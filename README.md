@@ -8,4 +8,5 @@ The protocol specification is checked both at compile-time and run-time to verif
 This all is done in such way that it does not make development tedious or boring, but instead robust and fun!
 
 This particular repository contains [Node HTTP server](https://nodejs.org/api/http.html) related library, which is designed to be consumed by users of TyRAS:
-
+- [server](./server) library exposes `createServer` overloaded function to create Node server which will serve given TyRAS `AppEndpoint`s.
+  All variations of Node HTTP servers are supported: [HTTP](https://nodejs.org/api/http.html), [HTTPS](https://nodejs.org/api/https.html), and [HTTP2](https://nodejs.org/api/http2.html), both secure and plain.
