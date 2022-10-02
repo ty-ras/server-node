@@ -5,6 +5,10 @@ module.exports = {
     "plugin:prettier/recommended",
   ],
   plugins: ["prettier"],
+  parser: "@babel/eslint-parser",
+  parserOptions: {
+    requireConfigFile: false
+  },
   env: {
     node: true,
     es2020: true

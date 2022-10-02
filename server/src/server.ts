@@ -2,6 +2,9 @@ import * as ep from "@ty-ras/endpoint";
 import * as prefix from "@ty-ras/endpoint-prefix";
 import * as server from "@ty-ras/server";
 
+import type * as ctx from "./context";
+import type * as state from "./state";
+
 import * as http from "http";
 import * as https from "https";
 import * as http2 from "http2";
@@ -10,7 +13,7 @@ import type * as tls from "tls";
 
 export function createServer<TState>(
   opts: ServerCreationOptions<
-    HTTP1ServerContext,
+    ctx.HTTP1ServerContext,
     TState,
     http.ServerOptions,
     false
@@ -19,7 +22,7 @@ export function createServer<TState>(
 ): http.Server;
 export function createServer<TState>(
   opts: ServerCreationOptions<
-    HTTP1ServerContext,
+    ctx.HTTP1ServerContext,
     TState,
     https.ServerOptions,
     true
@@ -28,7 +31,7 @@ export function createServer<TState>(
 ): https.Server;
 export function createServer<TState>(
   opts: ServerCreationOptions<
-    HTTP2ServerContext,
+    ctx.HTTP2ServerContext,
     TState,
     http2.ServerOptions,
     false
@@ -37,7 +40,7 @@ export function createServer<TState>(
 ): http2.Http2Server;
 export function createServer<TState>(
   opts: ServerCreationOptions<
-    HTTP2ServerContext,
+    ctx.HTTP2ServerContext,
     TState,
     http2.SecureServerOptions,
     true
@@ -47,28 +50,28 @@ export function createServer<TState>(
 export function createServer<TState>(
   opts:
     | (ServerCreationOptions<
-        HTTP1ServerContext,
+        ctx.HTTP1ServerContext,
         TState,
         http.ServerOptions,
         false
       > &
         HTTP1ServerOptions)
     | (ServerCreationOptions<
-        HTTP1ServerContext,
+        ctx.HTTP1ServerContext,
         TState,
         https.ServerOptions,
         true
       > &
         HTTP1ServerOptions)
     | (ServerCreationOptions<
-        HTTP2ServerContext,
+        ctx.HTTP2ServerContext,
         TState,
         http2.ServerOptions,
         false
       > &
         HTTP2ServerOptions)
     | (ServerCreationOptions<
-        HTTP2ServerContext,
+        ctx.HTTP2ServerContext,
         TState,
         http2.SecureServerOptions,
         true
@@ -118,32 +121,20 @@ export type HTTP2ServerOptions = {
 
 export type HTTPVersion = 1 | 2;
 
-export type HTTP1ServerContext = Context<
-  http.IncomingMessage,
-  http.ServerResponse
->;
-
-export type HTTP2ServerContext = Context<
-  http2.Http2ServerRequest,
-  http2.Http2ServerResponse
->;
-
-export interface Context<TRequest, TResponse> {
-  req: TRequest;
-  res: TResponse;
-}
-
 export interface ServerCreationOptions<
-  TContext,
+  TServerContext,
   TState,
   TOPtions,
   TSecure extends boolean,
 > {
-  endpoints: Array<
-    ep.AppEndpoint<TContext & { state: TState }, Record<string, unknown>>
+  endpoints: ReadonlyArray<
+    ep.AppEndpoint<
+      ctx.ContextGeneric<TServerContext, TState>,
+      Record<string, unknown>
+    >
   >;
-  createState?: ((context: TContext) => ep.MaybePromise<TState>) | undefined;
-  events?: server.ServerEventEmitter<TContext, TState> | undefined;
+  createState?: state.CreateState<TServerContext, TState> | undefined;
+  events?: server.ServerEventEmitter<TServerContext, TState> | undefined;
   options?: TOPtions | undefined;
   onStateCreationOrServerException?: ((error: unknown) => void) | undefined;
   secure?: TSecure | undefined;
@@ -201,13 +192,18 @@ const createHandleHttpRequest =
       events,
       onStateCreationOrServerException,
     }: Pick<
-      ServerCreationOptions<Context<TRequest, TResponse>, TState, never, never>,
+      ServerCreationOptions<
+        ctx.ServerContextGeneric<TRequest, TResponse>,
+        TState,
+        never,
+        never
+      >,
       "createState" | "events" | "onStateCreationOrServerException"
     >,
     regExpAndHandler: {
       url: RegExp;
       handler: ep.DynamicHandlerGetter<
-        Context<TRequest, TResponse> & {
+        ctx.ServerContextGeneric<TRequest, TResponse> & {
           state: TState;
         }
       >;
@@ -281,7 +277,7 @@ const asyncToVoid =
   };
 
 const getRegExpAndHandler = <TContext>(
-  endpoints: Array<ep.AppEndpoint<TContext, Record<string, unknown>>>,
+  endpoints: ReadonlyArray<ep.AppEndpoint<TContext, Record<string, unknown>>>,
 ) => prefix.atPrefix("", ...endpoints).getRegExpAndHandler("");
 
 const isSecure = (
