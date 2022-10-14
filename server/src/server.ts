@@ -143,7 +143,6 @@ export interface ServerCreationOptions<
   createState?: ctx.CreateStateGeneric<TStateInfo, TServerContext> | undefined;
   events?: server.ServerEventEmitter<TServerContext, TState> | undefined;
   options?: TOPtions | undefined;
-  onServerException?: ((error: unknown) => void) | undefined;
   secure?: TSecure | undefined;
 }
 
@@ -198,7 +197,6 @@ const createHandleHttpRequest =
     {
       createState,
       events,
-      onServerException,
     }: Pick<
       ServerCreationOptions<
         ctx.ServerContextGeneric<TRequest, TResponse>,
@@ -207,7 +205,7 @@ const createHandleHttpRequest =
         never,
         never
       >,
-      "createState" | "events" | "onServerException"
+      "createState" | "events"
     >,
     regExpAndHandler: ep.FinalizedAppEndpoint<
       ctx.ServerContextGeneric<TRequest, TResponse>,
@@ -216,18 +214,16 @@ const createHandleHttpRequest =
   ): HTTP1Or2Handler<TRequest, TResponse> =>
   async (req: TRequest, res: TResponse) => {
     try {
-      const ctx = { req, res };
-
-      // 2. Perform flow
+      // Perform flow (typicalServerFlow is no-throw (as much as there can be one in JS) function)
       await server.typicalServerFlow(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-        ctx,
+        { req, res },
         regExpAndHandler,
         events,
         {
           getURL: ({ req }) => req.url,
-          getState: ({ req }, stateInfo) =>
-            createState?.({ context: req, stateInfo }),
+          getState: async ({ req }, stateInfo) =>
+            await createState?.({ context: req, stateInfo }),
           getMethod: ({ req }) => req.method ?? "",
           getHeader: ({ req }, headerName) => req.headers[headerName],
           getRequestBody: ({ req }) => req,
@@ -252,13 +248,6 @@ const createHandleHttpRequest =
           },
         },
       );
-    } catch (error) {
-      try {
-        onServerException?.(error);
-      } catch {
-        // Nothing we can do here anymore
-      }
-      res.statusCode = 500;
     } finally {
       if (!res.writableEnded) {
         res.end();

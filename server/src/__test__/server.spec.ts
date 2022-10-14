@@ -82,15 +82,12 @@ const getCreateState = (
   info: testSupport.ServerTestAdditionalInfo[0],
 ): Pick<
   spec.ServerCreationOptions<ctx.ServerContext, unknown, never, never, never>,
-  "createState" | "onServerException"
+  "createState"
 > =>
   info == 500
     ? {
         createState: () => {
           throw new Error("This should be catched.");
-        },
-        onServerException: () => {
-          throw new Error("This should be catched as well.");
         },
       }
     : {};
