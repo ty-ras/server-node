@@ -1,11 +1,6 @@
-import type * as server from "@ty-ras/server";
 import type * as http from "http";
 import type * as http2 from "http2";
-
-export interface HKTContext extends server.HKTContext {
-  readonly type: ContextGeneric<this["_TServerContext"], this["_TState"]>;
-  readonly _TServerContext?: unknown;
-}
+import type * as ep from "@ty-ras/endpoint";
 
 export type Context<TState> = Context1<TState> | Context2<TState>;
 export type ServerContext = HTTP1ServerContext | HTTP2ServerContext;
@@ -31,3 +26,28 @@ export interface ServerContextGeneric<TRequest, TResponse> {
   req: TRequest;
   res: TResponse;
 }
+
+export type CreateStateGeneric<
+  TStateInfo,
+  TServerContext extends { req: unknown },
+> = StateProvider<TServerContext["req"], TStateInfo>;
+
+export type CreateState1<TStateInfo> = CreateStateGeneric<
+  TStateInfo,
+  HTTP1ServerContext
+>;
+
+export type CreateState2<TStateInfo> = CreateStateGeneric<
+  TStateInfo,
+  HTTP2ServerContext
+>;
+
+export type CreateState<TStateInfo> = CreateStateGeneric<
+  TStateInfo,
+  HTTP1ServerContext | HTTP2ServerContext
+>;
+
+export type StateProvider<TContext, TStateInfo> = (args: {
+  context: TContext;
+  stateInfo: TStateInfo;
+}) => ep.MaybePromise<unknown>;

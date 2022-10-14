@@ -1,10 +1,8 @@
 import * as ep from "@ty-ras/endpoint";
 import * as prefix from "@ty-ras/endpoint-prefix";
 import * as server from "@ty-ras/server";
-import type * as dataBE from "@ty-ras/data-backend";
 
 import type * as ctx from "./context";
-import type * as state from "./state";
 
 import * as http from "http";
 import * as https from "https";
@@ -12,46 +10,51 @@ import * as http2 from "http2";
 import * as stream from "stream";
 import type * as tls from "tls";
 
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP1ServerContext,
+    TStateInfo,
     TState,
     http.ServerOptions,
     false
   > &
     HTTP1ServerOptions,
 ): http.Server;
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP1ServerContext,
+    TStateInfo,
     TState,
     https.ServerOptions,
     true
   > &
     HTTP1ServerOptions,
 ): https.Server;
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP2ServerContext,
+    TStateInfo,
     TState,
     http2.ServerOptions,
     false
   > &
     HTTP2ServerOptions,
 ): http2.Http2Server;
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP2ServerContext,
+    TStateInfo,
     TState,
     http2.SecureServerOptions,
     true
   > &
     HTTP2ServerOptions,
 ): http2.Http2SecureServer;
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts:
     | (ServerCreationOptions<
         ctx.HTTP1ServerContext,
+        TStateInfo,
         TState,
         http.ServerOptions,
         false
@@ -59,6 +62,7 @@ export function createServer<TState>(
         HTTP1ServerOptions)
     | (ServerCreationOptions<
         ctx.HTTP1ServerContext,
+        TStateInfo,
         TState,
         https.ServerOptions,
         true
@@ -66,6 +70,7 @@ export function createServer<TState>(
         HTTP1ServerOptions)
     | (ServerCreationOptions<
         ctx.HTTP2ServerContext,
+        TStateInfo,
         TState,
         http2.ServerOptions,
         false
@@ -73,6 +78,7 @@ export function createServer<TState>(
         HTTP2ServerOptions)
     | (ServerCreationOptions<
         ctx.HTTP2ServerContext,
+        TStateInfo,
         TState,
         http2.SecureServerOptions,
         true
@@ -84,6 +90,7 @@ export function createServer<TState>(
     const { endpoints, options, secure, ...handlerOptions } = opts;
     const httpHandler = asyncToVoid(
       createHandleHttpRequest<
+        TStateInfo,
         TState,
         http2.Http2ServerRequest,
         http2.Http2ServerResponse
@@ -98,6 +105,7 @@ export function createServer<TState>(
     const { endpoints, options, secure, ...handlerOptions } = opts;
     const httpHandler = asyncToVoid(
       createHandleHttpRequest<
+        TStateInfo,
         TState,
         http.IncomingMessage,
         http.ServerResponse
@@ -132,17 +140,12 @@ export interface ServerCreationOptions<
   endpoints: ReadonlyArray<
     ep.AppEndpoint<TServerContext, TStateInfo, ep.TMetadataBase>
   >;
-  createState?: StateProvider<TServerContext["req"], TStateInfo> | undefined;
+  createState?: ctx.CreateStateGeneric<TStateInfo, TServerContext> | undefined;
   events?: server.ServerEventEmitter<TServerContext, TState> | undefined;
   options?: TOPtions | undefined;
-  onStateCreationOrServerException?: ((error: unknown) => void) | undefined;
+  onServerException?: ((error: unknown) => void) | undefined;
   secure?: TSecure | undefined;
 }
-
-export type StateProvider<TContext, TStateInfo> = (args: {
-  context: TContext;
-  stateInfo: TStateInfo;
-}) => ep.MaybePromise<unknown>;
 
 const secureHttp1OptionKeys: ReadonlyArray<keyof tls.TlsOptions> = [
   "key",
@@ -195,7 +198,7 @@ const createHandleHttpRequest =
     {
       createState,
       events,
-      onStateCreationOrServerException,
+      onServerException,
     }: Pick<
       ServerCreationOptions<
         ctx.ServerContextGeneric<TRequest, TResponse>,
@@ -204,7 +207,7 @@ const createHandleHttpRequest =
         never,
         never
       >,
-      "createState" | "events" | "onStateCreationOrServerException"
+      "createState" | "events" | "onServerException"
     >,
     regExpAndHandler: ep.FinalizedAppEndpoint<
       ctx.ServerContextGeneric<TRequest, TResponse>,
@@ -251,7 +254,7 @@ const createHandleHttpRequest =
       );
     } catch (error) {
       try {
-        onStateCreationOrServerException?.(error);
+        onServerException?.(error);
       } catch {
         // Nothing we can do here anymore
       }
