@@ -3,7 +3,6 @@ import * as prefix from "@ty-ras/endpoint-prefix";
 import * as server from "@ty-ras/server";
 
 import type * as ctx from "./context";
-import type * as state from "./state";
 
 import * as http from "http";
 import * as https from "https";
@@ -11,46 +10,51 @@ import * as http2 from "http2";
 import * as stream from "stream";
 import type * as tls from "tls";
 
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP1ServerContext,
+    TStateInfo,
     TState,
     http.ServerOptions,
     false
   > &
     HTTP1ServerOptions,
 ): http.Server;
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP1ServerContext,
+    TStateInfo,
     TState,
     https.ServerOptions,
     true
   > &
     HTTP1ServerOptions,
 ): https.Server;
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP2ServerContext,
+    TStateInfo,
     TState,
     http2.ServerOptions,
     false
   > &
     HTTP2ServerOptions,
 ): http2.Http2Server;
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP2ServerContext,
+    TStateInfo,
     TState,
     http2.SecureServerOptions,
     true
   > &
     HTTP2ServerOptions,
 ): http2.Http2SecureServer;
-export function createServer<TState>(
+export function createServer<TStateInfo, TState>(
   opts:
     | (ServerCreationOptions<
         ctx.HTTP1ServerContext,
+        TStateInfo,
         TState,
         http.ServerOptions,
         false
@@ -58,6 +62,7 @@ export function createServer<TState>(
         HTTP1ServerOptions)
     | (ServerCreationOptions<
         ctx.HTTP1ServerContext,
+        TStateInfo,
         TState,
         https.ServerOptions,
         true
@@ -65,6 +70,7 @@ export function createServer<TState>(
         HTTP1ServerOptions)
     | (ServerCreationOptions<
         ctx.HTTP2ServerContext,
+        TStateInfo,
         TState,
         http2.ServerOptions,
         false
@@ -72,6 +78,7 @@ export function createServer<TState>(
         HTTP2ServerOptions)
     | (ServerCreationOptions<
         ctx.HTTP2ServerContext,
+        TStateInfo,
         TState,
         http2.SecureServerOptions,
         true
@@ -83,6 +90,7 @@ export function createServer<TState>(
     const { endpoints, options, secure, ...handlerOptions } = opts;
     const httpHandler = asyncToVoid(
       createHandleHttpRequest<
+        TStateInfo,
         TState,
         http2.Http2ServerRequest,
         http2.Http2ServerResponse
@@ -97,6 +105,7 @@ export function createServer<TState>(
     const { endpoints, options, secure, ...handlerOptions } = opts;
     const httpHandler = asyncToVoid(
       createHandleHttpRequest<
+        TStateInfo,
         TState,
         http.IncomingMessage,
         http.ServerResponse
@@ -122,21 +131,18 @@ export type HTTP2ServerOptions = {
 export type HTTPVersion = 1 | 2;
 
 export interface ServerCreationOptions<
-  TServerContext,
+  TServerContext extends { req: unknown },
+  TStateInfo,
   TState,
   TOPtions,
   TSecure extends boolean,
 > {
   endpoints: ReadonlyArray<
-    ep.AppEndpoint<
-      ctx.ContextGeneric<TServerContext, TState>,
-      Record<string, unknown>
-    >
+    ep.AppEndpoint<TServerContext, TStateInfo, ep.TMetadataBase>
   >;
-  createState?: state.CreateState<TServerContext, TState> | undefined;
+  createState?: ctx.CreateStateGeneric<TStateInfo, TServerContext> | undefined;
   events?: server.ServerEventEmitter<TServerContext, TState> | undefined;
   options?: TOPtions | undefined;
-  onStateCreationOrServerException?: ((error: unknown) => void) | undefined;
   secure?: TSecure | undefined;
 }
 
@@ -183,6 +189,7 @@ const secureHttp2OptionKeys: ReadonlyArray<
 
 const createHandleHttpRequest =
   <
+    TStateInfo,
     TState,
     TRequest extends http.IncomingMessage | http2.Http2ServerRequest,
     TResponse extends http.ServerResponse | http2.Http2ServerResponse,
@@ -190,40 +197,33 @@ const createHandleHttpRequest =
     {
       createState,
       events,
-      onStateCreationOrServerException,
     }: Pick<
       ServerCreationOptions<
         ctx.ServerContextGeneric<TRequest, TResponse>,
+        TStateInfo,
         TState,
         never,
         never
       >,
-      "createState" | "events" | "onStateCreationOrServerException"
+      "createState" | "events"
     >,
-    regExpAndHandler: {
-      url: RegExp;
-      handler: ep.DynamicHandlerGetter<
-        ctx.ServerContextGeneric<TRequest, TResponse> & {
-          state: TState;
-        }
-      >;
-    },
+    regExpAndHandler: ep.FinalizedAppEndpoint<
+      ctx.ServerContextGeneric<TRequest, TResponse>,
+      TStateInfo
+    >,
   ): HTTP1Or2Handler<TRequest, TResponse> =>
   async (req: TRequest, res: TResponse) => {
     try {
-      const ctx = { req, res };
-      // 1. Set up state
-      const state = await createState?.(ctx);
-
-      // 2. Perform flow
+      // Perform flow (typicalServerFlow is no-throw (as much as there can be one in JS) function)
       await server.typicalServerFlow(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-        { ...ctx, state: state as any },
+        { req, res },
         regExpAndHandler,
         events,
         {
           getURL: ({ req }) => req.url,
-          getState: ({ state }) => state,
+          getState: async ({ req }, stateInfo) =>
+            await createState?.({ context: req, stateInfo }),
           getMethod: ({ req }) => req.method ?? "",
           getHeader: ({ req }, headerName) => req.headers[headerName],
           getRequestBody: ({ req }) => req,
@@ -248,13 +248,6 @@ const createHandleHttpRequest =
           },
         },
       );
-    } catch (error) {
-      try {
-        onStateCreationOrServerException?.(error);
-      } catch {
-        // Nothing we can do here anymore
-      }
-      res.statusCode = 500;
     } finally {
       if (!res.writableEnded) {
         res.end();
@@ -276,8 +269,10 @@ const asyncToVoid =
     void asyncCallback(...args);
   };
 
-const getRegExpAndHandler = <TContext>(
-  endpoints: ReadonlyArray<ep.AppEndpoint<TContext, Record<string, unknown>>>,
+const getRegExpAndHandler = <TContext, TStateInfo>(
+  endpoints: ReadonlyArray<
+    ep.AppEndpoint<TContext, TStateInfo, ep.TMetadataBase>
+  >,
 ) => prefix.atPrefix("", ...endpoints).getRegExpAndHandler("");
 
 const isSecure = (

@@ -4,6 +4,7 @@ import * as spec from "../server";
 import * as secure from "./secure";
 
 import * as testSupport from "@ty-ras/server-test-support";
+import type * as ctx from "../context";
 
 const createServer: testSupport.CreateServer = (
   endpoints,
@@ -77,14 +78,16 @@ testSupport.registerTests(test, createServer, {
   secure: true,
 });
 
-const getCreateState = (info: testSupport.ServerTestAdditionalInfo[0]) =>
+const getCreateState = (
+  info: testSupport.ServerTestAdditionalInfo[0],
+): Pick<
+  spec.ServerCreationOptions<ctx.ServerContext, unknown, never, never, never>,
+  "createState"
+> =>
   info == 500
     ? {
         createState: () => {
           throw new Error("This should be catched.");
-        },
-        onStateCreationOrServerException: () => {
-          throw new Error("This should be catched as well.");
         },
       }
     : {};
