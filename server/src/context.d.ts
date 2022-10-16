@@ -1,16 +1,8 @@
 import type * as http from "http";
 import type * as http2 from "http2";
-import type * as ep from "@ty-ras/endpoint";
+import type * as server from "@ty-ras/server";
 
-export type Context<TState> = Context1<TState> | Context2<TState>;
 export type ServerContext = HTTP1ServerContext | HTTP2ServerContext;
-
-export type ContextGeneric<TServerContext, TState> = TServerContext & {
-  state: TState;
-};
-
-export type Context1<TState> = ContextGeneric<HTTP1ServerContext, TState>;
-export type Context2<TState> = ContextGeneric<HTTP2ServerContext, TState>;
 
 export type HTTP1ServerContext = ServerContextGeneric<
   http.IncomingMessage,
@@ -30,7 +22,7 @@ export interface ServerContextGeneric<TRequest, TResponse> {
 export type CreateStateGeneric<
   TStateInfo,
   TServerContext extends { req: unknown },
-> = StateProvider<TServerContext["req"], TStateInfo>;
+> = server.StateProvider<TServerContext["req"], TStateInfo>;
 
 export type CreateState1<TStateInfo> = CreateStateGeneric<
   TStateInfo,
@@ -42,12 +34,6 @@ export type CreateState2<TStateInfo> = CreateStateGeneric<
   HTTP2ServerContext
 >;
 
-export type CreateState<TStateInfo> = CreateStateGeneric<
-  TStateInfo,
-  HTTP1ServerContext | HTTP2ServerContext
->;
-
-export type StateProvider<TContext, TStateInfo> = (args: {
-  context: TContext;
-  stateInfo: TStateInfo;
-}) => ep.MaybePromise<unknown>;
+export type CreateState<TStateInfo> =
+  | CreateState1<TStateInfo>
+  | CreateState2<TStateInfo>;
