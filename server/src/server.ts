@@ -137,9 +137,7 @@ export interface ServerCreationOptions<
   TOPtions,
   TSecure extends boolean,
 > {
-  endpoints: ReadonlyArray<
-    ep.AppEndpoint<TServerContext, TStateInfo, ep.TMetadataBase>
-  >;
+  endpoints: ReadonlyArray<ep.AppEndpoint<TServerContext, TStateInfo>>;
   createState?: ctx.CreateStateGeneric<TStateInfo, TServerContext> | undefined;
   events?: server.ServerEventEmitter<TServerContext, TState> | undefined;
   options?: TOPtions | undefined;
@@ -270,9 +268,7 @@ const asyncToVoid =
   };
 
 const getRegExpAndHandler = <TContext, TStateInfo>(
-  endpoints: ReadonlyArray<
-    ep.AppEndpoint<TContext, TStateInfo, ep.TMetadataBase>
-  >,
+  endpoints: ReadonlyArray<ep.AppEndpoint<TContext, TStateInfo>>,
 ) => prefix.atPrefix("", ...endpoints).getRegExpAndHandler("");
 
 const isSecure = (
