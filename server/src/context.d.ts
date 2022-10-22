@@ -17,6 +17,8 @@ export type HTTP2ServerContext = ServerContextGeneric<
 export interface ServerContextGeneric<TRequest, TResponse> {
   req: TRequest;
   res: TResponse;
+  skipSettingStatusCode: boolean;
+  skipSendingBody: boolean;
 }
 
 export type CreateStateGeneric<
