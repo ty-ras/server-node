@@ -212,40 +212,43 @@ const createHandleHttpRequest =
   ): HTTP1Or2Handler<TRequest, TResponse> =>
   async (req: TRequest, res: TResponse) => {
     try {
+      const ctx: ctx.ServerContextGeneric<TRequest, TResponse> = {
+        req,
+        res,
+        skipSettingStatusCode: false,
+        skipSendingBody: false,
+      };
       // Perform flow (typicalServerFlow is no-throw (as much as there can be one in JS) function)
-      await server.typicalServerFlow(
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-        { req, res },
-        regExpAndHandler,
-        events,
-        {
-          getURL: ({ req }) => req.url,
-          getState: async ({ req }, stateInfo) =>
-            await createState?.({ context: req, stateInfo }),
-          getMethod: ({ req }) => req.method ?? "",
-          getHeader: ({ req }, headerName) => req.headers[headerName],
-          getRequestBody: ({ req }) => req,
-          setHeader: ({ res }, headerName, headerValue) =>
-            res.setHeader(headerName, headerValue),
-          setStatusCode: ({ res }, statusCode) => {
+      await server.typicalServerFlow(ctx, regExpAndHandler, events, {
+        getURL: ({ req }) => req.url,
+        getState: async ({ req }, stateInfo) =>
+          await createState?.({ context: req, stateInfo }),
+        getMethod: ({ req }) => req.method ?? "",
+        getHeader: ({ req }, headerName) => req.headers[headerName],
+        getRequestBody: ({ req }) => req,
+        setHeader: ({ res }, headerName, headerValue) =>
+          res.setHeader(headerName, headerValue),
+        setStatusCode: ({ res, skipSettingStatusCode }, statusCode) => {
+          if (!skipSettingStatusCode) {
+            // E.g. event handler has modified the response
             res.statusCode = statusCode;
-          },
-          sendContent: async ({ res }, content) => {
-            if (content != undefined) {
-              if (content instanceof stream.Readable) {
-                await stream.promises.pipeline(content, res);
-              } else {
-                const buffer =
-                  typeof content === "string" ? Buffer.from(content) : content;
-                res.setHeader("Content-Length", buffer.byteLength);
-                // We need to cast to Writable, as otherwise we will get compilation error:
-                //  Each member of the union type [...] has signatures, but none of those signatures are compatible with each other.
-                (res as stream.Writable).write(buffer);
-              }
-            }
-          },
+          }
         },
-      );
+        sendContent: async ({ res, skipSendingBody }, content) => {
+          if (!skipSendingBody && content != undefined) {
+            if (content instanceof stream.Readable) {
+              await stream.promises.pipeline(content, res);
+            } else {
+              const buffer =
+                typeof content === "string" ? Buffer.from(content) : content;
+              res.setHeader("Content-Length", buffer.byteLength);
+              // We need to cast to Writable, as otherwise we will get compilation error:
+              //  Each member of the union type [...] has signatures, but none of those signatures are compatible with each other.
+              (res as stream.Writable).write(buffer);
+            }
+          }
+        },
+      });
     } finally {
       if (!res.writableEnded) {
         res.end();
