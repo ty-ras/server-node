@@ -12,3 +12,4 @@ export type {
   ServerContextGeneric,
 } from "./context";
 export * from "./server";
+export * from "./cors";

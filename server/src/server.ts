@@ -3,11 +3,11 @@ import * as prefix from "@ty-ras/endpoint-prefix";
 import * as server from "@ty-ras/server";
 
 import type * as ctx from "./context";
+import * as internal from "./internal";
 
 import * as http from "http";
 import * as https from "https";
 import * as http2 from "http2";
-import * as stream from "stream";
 import type * as tls from "tls";
 
 export function createServer<TStateInfo, TState>(
@@ -139,7 +139,9 @@ export interface ServerCreationOptions<
 > {
   endpoints: ReadonlyArray<ep.AppEndpoint<TServerContext, TStateInfo>>;
   createState?: ctx.CreateStateGeneric<TStateInfo, TServerContext> | undefined;
-  events?: server.ServerEventEmitter<TServerContext, TState> | undefined;
+  events?:
+    | server.ServerEventEmitter<server.GetContext<TServerContext>, TState>
+    | undefined;
   options?: TOPtions | undefined;
   secure?: TSecure | undefined;
 }
@@ -185,77 +187,54 @@ const secureHttp2OptionKeys: ReadonlyArray<
   "allowHTTP1" | "origins" | keyof tls.TlsOptions
 > = ["allowHTTP1", "origins", ...secureHttp1OptionKeys];
 
-const createHandleHttpRequest =
-  <
-    TStateInfo,
-    TState,
-    TRequest extends http.IncomingMessage | http2.Http2ServerRequest,
-    TResponse extends http.ServerResponse | http2.Http2ServerResponse,
-  >(
-    {
-      createState,
-      events,
-    }: Pick<
-      ServerCreationOptions<
-        ctx.ServerContextGeneric<TRequest, TResponse>,
-        TStateInfo,
-        TState,
-        never,
-        never
-      >,
-      "createState" | "events"
-    >,
-    regExpAndHandler: ep.FinalizedAppEndpoint<
+const createHandleHttpRequest = <
+  TStateInfo,
+  TState,
+  TRequest extends http.IncomingMessage | http2.Http2ServerRequest,
+  TResponse extends http.ServerResponse | http2.Http2ServerResponse,
+>(
+  {
+    createState,
+    events,
+  }: Pick<
+    ServerCreationOptions<
       ctx.ServerContextGeneric<TRequest, TResponse>,
-      TStateInfo
+      TStateInfo,
+      TState,
+      never,
+      never
     >,
-  ): HTTP1Or2Handler<TRequest, TResponse> =>
-  async (req: TRequest, res: TResponse) => {
+    "createState" | "events"
+  >,
+  regExpAndHandler: ep.FinalizedAppEndpoint<
+    ctx.ServerContextGeneric<TRequest, TResponse>,
+    TStateInfo
+  >,
+): HTTP1Or2Handler<TRequest, TResponse> => {
+  const flow = server.createTypicalServerFlow(
+    regExpAndHandler,
+    {
+      ...internal.staticCallbacks,
+      getState: async ({ req }, stateInfo) =>
+        await createState?.({ context: req, stateInfo }),
+    },
+    events,
+  );
+  return async (req: TRequest, res: TResponse) => {
     try {
       const ctx: ctx.ServerContextGeneric<TRequest, TResponse> = {
         req,
         res,
-        skipSettingStatusCode: false,
-        skipSendingBody: false,
       };
       // Perform flow (typicalServerFlow is no-throw (as much as there can be one in JS) function)
-      await server.typicalServerFlow(ctx, regExpAndHandler, events, {
-        getURL: ({ req }) => req.url,
-        getState: async ({ req }, stateInfo) =>
-          await createState?.({ context: req, stateInfo }),
-        getMethod: ({ req }) => req.method ?? "",
-        getHeader: ({ req }, headerName) => req.headers[headerName],
-        getRequestBody: ({ req }) => req,
-        setHeader: ({ res }, headerName, headerValue) =>
-          res.setHeader(headerName, headerValue),
-        setStatusCode: ({ res, skipSettingStatusCode }, statusCode) => {
-          if (!skipSettingStatusCode) {
-            // E.g. event handler has modified the response
-            res.statusCode = statusCode;
-          }
-        },
-        sendContent: async ({ res, skipSendingBody }, content) => {
-          if (!skipSendingBody && content != undefined) {
-            if (content instanceof stream.Readable) {
-              await stream.promises.pipeline(content, res);
-            } else {
-              const buffer =
-                typeof content === "string" ? Buffer.from(content) : content;
-              res.setHeader("Content-Length", buffer.byteLength);
-              // We need to cast to Writable, as otherwise we will get compilation error:
-              //  Each member of the union type [...] has signatures, but none of those signatures are compatible with each other.
-              (res as stream.Writable).write(buffer);
-            }
-          }
-        },
-      });
+      await flow(ctx);
     } finally {
       if (!res.writableEnded) {
         res.end();
       }
     }
   };
-
+};
 type HTTP1Or2Handler<TRequest, TResponse> = (
   req: TRequest,
   res: TResponse,
