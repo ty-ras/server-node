@@ -420,10 +420,10 @@
   dependencies:
     "@ty-ras/endpoint" "0.12.6"
 
-"@ty-ras/server@0.12.6":
-  version "0.12.6"
-  resolved "https://registry.yarnpkg.com/@ty-ras/server/-/server-0.12.6.tgz#134555ab7bb0228d34b8c4a5eeca3fcf4af4235c"
-  integrity sha512-LZOvOgULg+kV2/kqoWBfM6ISBAyVD4/7cfiPhcTJLlMDrKk4aWhQd9yc3O+YQNpWhrlSQKsrdWz4jvRzHQe7iw==
+"@ty-ras/server@0.12.7":
+  version "0.12.7"
+  resolved "https://registry.yarnpkg.com/@ty-ras/server/-/server-0.12.7.tgz#558414520842612a5de9bd12c0a5f446191a348a"
+  integrity sha512-4L4gbpXrOvCgFsE4iuNifoUOkdeekMejKj/7ru/LuVDXA5Y8+LRM23yLJ7JAsPgzs44mcc5jM0Nm2+tZlBWI7w==
   dependencies:
     "@ty-ras/endpoint" "0.12.7"
 

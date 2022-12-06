@@ -215,8 +215,8 @@ const createHandleHttpRequest = <
     regExpAndHandler,
     {
       ...internal.staticCallbacks,
-      getState: async ({ req }, stateInfo) =>
-        await createState?.({ context: req, stateInfo }),
+      getState: async ({ req }, url, stateInfo) =>
+        await createState?.({ context: req, url, stateInfo }),
     },
     events,
   );
