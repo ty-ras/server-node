@@ -1,6 +1,6 @@
 {
   "name": "@ty-ras/server-node",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "author": {
     "name": "Stanislav Muhametsin",
     "email": "346799+stazz@users.noreply.github.com",
@@ -32,7 +32,7 @@
   },
   "dependencies": {
     "@ty-ras/server": "0.13.0",
-    "@ty-ras/endpoint-prefix": "0.13.0"
+    "@ty-ras/endpoint-prefix": "0.13.1"
   },
   "devDependencies": {
     "@babel/core": "7.19.3",
