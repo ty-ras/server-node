@@ -1,10 +1,14 @@
+/**
+ * @file This file contains unit tests for functionality in file `../server.ts`.
+ */
+
 import test from "ava";
 
 import * as spec from "../server";
 import * as secure from "./secure";
 
 import * as testSupport from "@ty-ras/server-test-support";
-import type * as ctx from "../context";
+import type * as ctx from "../context.types";
 
 const createServer: testSupport.CreateServer = (
   endpoints,

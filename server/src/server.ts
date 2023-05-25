@@ -1,15 +1,24 @@
+/**
+ * @file This file exposes function to create Node HTTP 1 or 2 server serving giving TyRAS {@link ep.AppEndpoint}s.
+ */
+
 import * as ep from "@ty-ras/endpoint";
 import * as prefix from "@ty-ras/endpoint-prefix";
 import * as server from "@ty-ras/server";
 
-import type * as ctx from "./context";
+import type * as ctx from "./context.types";
 import * as internal from "./internal";
 
-import * as http from "http";
-import * as https from "https";
-import * as http2 from "http2";
-import type * as tls from "tls";
+import * as http from "node:http";
+import * as https from "node:https";
+import * as http2 from "node:http2";
+import type * as tls from "node:tls";
 
+/**
+ * Creates new non-secure HTTP1 {@link http.Server} serving given TyRAS {@link ep.AppEndpoint}s with additional configuration via {@link ServerCreationOptions}.
+ * @param opts The {@link ServerCreationOptions} to use when creating server.
+ * @returns A new non-secure HTTP1 {@link http.Server}.
+ */
 export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP1ServerContext,
@@ -20,6 +29,12 @@ export function createServer<TStateInfo, TState>(
   > &
     HTTP1ServerOptions,
 ): http.Server;
+
+/**
+ * Creates new secure HTTP1 {@link https.Server} serving given TyRAS {@link ep.AppEndpoint}s with additional configuration via {@link ServerCreationOptions}.
+ * @param opts The {@link ServerCreationOptions} to use when creating server.
+ * @returns A new secure HTTP1 {@link https.Server}.
+ */
 export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP1ServerContext,
@@ -30,6 +45,13 @@ export function createServer<TStateInfo, TState>(
   > &
     HTTP1ServerOptions,
 ): https.Server;
+
+/**
+ * Creates new non-secure HTTP2 {@link http2.Http2Server} serving given TyRAS {@link ep.AppEndpoint}s with additional configuration via {@link ServerCreationOptions}.
+ * Please set `httpVersion` value of `opts` to `2` to use HTTP2 protocol.
+ * @param opts The {@link ServerCreationOptions} to use when creating server.
+ * @returns A new non-secure HTTP2 {@link http2.Http2Server}.
+ */
 export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP2ServerContext,
@@ -40,6 +62,13 @@ export function createServer<TStateInfo, TState>(
   > &
     HTTP2ServerOptions,
 ): http2.Http2Server;
+
+/**
+ * Creates new secure HTTP2 {@link http2.Http2SecureServer} serving given TyRAS {@link ep.AppEndpoint}s with additional configuration via {@link ServerCreationOptions}.
+ * Please set `httpVersion` value of `opts` to `2` to use HTTP2 protocol.
+ * @param opts The {@link ServerCreationOptions} to use when creating server.
+ * @returns A new secure HTTP2 {@link http2.Http2SecureServer}.
+ */
 export function createServer<TStateInfo, TState>(
   opts: ServerCreationOptions<
     ctx.HTTP2ServerContext,
@@ -50,6 +79,13 @@ export function createServer<TStateInfo, TState>(
   > &
     HTTP2ServerOptions,
 ): http2.Http2SecureServer;
+
+/**
+ * Creates new secure or non-secure HTTP1 or HTTP2 Node server serving given TyRAS {@link ep.AppEndpoint}s with additional configuration via {@link ServerCreationOptions}.
+ * Please set `httpVersion` value of `opts` to `2` to enable HTTP2 protocol, otherwise HTTP1 server will be returned.
+ * @param opts The {@link ServerCreationOptions} to use when creating server.
+ * @returns Secure or non-secure HTTP1 or HTTP2 Node server
+ */
 export function createServer<TStateInfo, TState>(
   opts:
     | (ServerCreationOptions<
@@ -120,16 +156,31 @@ export function createServer<TStateInfo, TState>(
   return retVal;
 }
 
+/**
+ * This type is used to make it possible to explicitly specify using HTTP protocol version 1 for server if given to {@link createServer}.
+ */
 export type HTTP1ServerOptions = {
+  /**
+   * Optional property which should be set to `1` if needed to explicitly use HTTP protocol version 1 for server.
+   * The default protocol version is 1, so this is optional.
+   */
   httpVersion?: 1;
 };
 
+/**
+ * This type is used to make it possible to specify {@link createServer} to use HTTP protocol version 2, as opposed to default 1.
+ */
 export type HTTP2ServerOptions = {
+  /**
+   * Property which should be set to `2` if needed to use HTTP protocol version 2 for server.
+   * The default protocol version is 1, so to override that, this property must be specified.
+   */
   httpVersion: 2;
 };
 
-export type HTTPVersion = 1 | 2;
-
+/**
+ * This interface contains options common for both HTTP 1 and 2 servers when creating them via {@link createServer}.
+ */
 export interface ServerCreationOptions<
   TServerContext extends { req: unknown },
   TStateInfo,
@@ -137,12 +188,31 @@ export interface ServerCreationOptions<
   TOPtions,
   TSecure extends boolean,
 > {
+  /**
+   * The TyRAS {@link ep.AppEndpoint}s to server via returned HTTP server.
+   */
   endpoints: ReadonlyArray<ep.AppEndpoint<TServerContext, TStateInfo>>;
+
+  /**
+   * The callback to create endpoint-specific state objects.
+   */
   createState?: ctx.CreateStateGeneric<TStateInfo, TServerContext> | undefined;
+
+  /**
+   * The callback for tracking events occurred within the server.
+   */
   events?:
-    | server.ServerEventEmitter<server.GetContext<TServerContext>, TState>
+    | server.ServerEventHandler<server.GetContext<TServerContext>, TState>
     | undefined;
+
+  /**
+   * The further options for the HTTP server.
+   */
   options?: TOPtions | undefined;
+
+  /**
+   * Set this to `true` explicitly if automatic detection of server being secure by {@link createServer} fails.
+   */
   secure?: TSecure | undefined;
 }
 

@@ -1,7 +1,15 @@
-// This is pretty much copied from https://www.techengineer.one/how-to-generate-x-509v3-self-signed-certificate-in-pem-format-with-node-js/
-import * as crypto from "crypto";
+/**
+ * @file This file contains code related to testing HTTPS server.
+ * The code is copied, with some modifications, from https://www.techengineer.one/how-to-generate-x-509v3-self-signed-certificate-in-pem-format-with-node-js/ .
+ */
+
+import * as crypto from "node:crypto";
 import forge from "node-forge";
 
+/**
+ * Generates a new self-signed key and certificate to use in testing HTTPS server.
+ * @returns Self-signed key and certificate.
+ */
 export const generateKeyAndCert = () => {
   const pki = forge.pki;
   // generate a keypair and create an X.509v3 certificate
