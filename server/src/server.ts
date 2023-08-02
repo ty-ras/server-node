@@ -3,7 +3,6 @@
  */
 
 import * as ep from "@ty-ras/endpoint";
-import * as prefix from "@ty-ras/endpoint-prefix";
 import * as server from "@ty-ras/server";
 
 import type * as ctx from "./context.types";
@@ -123,14 +122,14 @@ export function createServer<TStateInfo, TState>(
 ) {
   let retVal;
   if ("httpVersion" in opts && opts.httpVersion === 2) {
-    const { endpoints, options, secure, ...handlerOptions } = opts;
+    const { options, secure, ...handlerOptions } = opts;
     const httpHandler = asyncToVoid(
       createHandleHttpRequest<
         TStateInfo,
         TState,
         http2.Http2ServerRequest,
         http2.Http2ServerResponse
-      >(handlerOptions, getRegExpAndHandler(endpoints)),
+      >(handlerOptions),
     );
     if (isSecure(secure, options, 2)) {
       retVal = http2.createSecureServer(options ?? {}, httpHandler);
@@ -138,14 +137,14 @@ export function createServer<TStateInfo, TState>(
       retVal = http2.createServer(options ?? {}, httpHandler);
     }
   } else {
-    const { endpoints, options, secure, ...handlerOptions } = opts;
+    const { options, secure, ...handlerOptions } = opts;
     const httpHandler = asyncToVoid(
       createHandleHttpRequest<
         TStateInfo,
         TState,
         http.IncomingMessage,
         http.ServerResponse
-      >(handlerOptions, getRegExpAndHandler(endpoints)),
+      >(handlerOptions),
     );
     if (isSecure(secure, options, 1)) {
       retVal = https.createServer(options ?? {}, httpHandler);
@@ -262,27 +261,22 @@ const createHandleHttpRequest = <
   TState,
   TRequest extends http.IncomingMessage | http2.Http2ServerRequest,
   TResponse extends http.ServerResponse | http2.Http2ServerResponse,
->(
-  {
-    createState,
-    events,
-  }: Pick<
-    ServerCreationOptions<
-      ctx.ServerContextGeneric<TRequest, TResponse>,
-      TStateInfo,
-      TState,
-      never,
-      never
-    >,
-    "createState" | "events"
-  >,
-  regExpAndHandler: ep.FinalizedAppEndpoint<
+>({
+  endpoints,
+  createState,
+  events,
+}: Pick<
+  ServerCreationOptions<
     ctx.ServerContextGeneric<TRequest, TResponse>,
-    TStateInfo
+    TStateInfo,
+    TState,
+    never,
+    never
   >,
-): HTTP1Or2Handler<TRequest, TResponse> => {
+  "endpoints" | "createState" | "events"
+>): HTTP1Or2Handler<TRequest, TResponse> => {
   const flow = server.createTypicalServerFlow(
-    regExpAndHandler,
+    endpoints,
     {
       ...internal.staticCallbacks,
       getState: async ({ req }, stateInfo) =>
@@ -318,10 +312,6 @@ const asyncToVoid =
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     void asyncCallback(...args);
   };
-
-const getRegExpAndHandler = <TContext, TStateInfo>(
-  endpoints: ReadonlyArray<ep.AppEndpoint<TContext, TStateInfo>>,
-) => prefix.atPrefix("", ...endpoints).getRegExpAndHandler("");
 
 const isSecure = (
   secure: boolean | undefined,
