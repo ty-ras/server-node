@@ -323,3 +323,12 @@ const isSecure = (
     (version === 1 ? secureHttp1OptionKeys : secureHttp2OptionKeys).some(
       (propKey) => propKey in options,
     ));
+
+/**
+ * This type contains all the HTTP server types that can be created with TyRAS backend for Node servers.
+ */
+export type HttpServer =
+  | http.Server
+  | https.Server
+  | http2.Http2Server
+  | http2.Http2SecureServer;
