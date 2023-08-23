@@ -1,6 +1,7 @@
 /**
  * @file This file contains code which exposes Node server -specific CORS handler creation function.
  */
+
 /* c8 ignore next 13 */
 import * as server from "@ty-ras/server";
 import * as internal from "./internal";
