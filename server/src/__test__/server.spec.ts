@@ -85,7 +85,7 @@ testSupport.registerTests(test, createServer, {
 const getCreateState = (
   info: testSupport.ServerTestAdditionalInfo[0],
 ): Pick<
-  spec.ServerCreationOptions<ctx.ServerContext, unknown, never, never, never>,
+  spec.ServerCreationOptions<ctx.ServerContext, unknown, never>,
   "createState"
 > =>
   info == 500
