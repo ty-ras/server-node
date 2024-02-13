@@ -2,7 +2,6 @@
  * @file This file contains helper function to create Node server callback.
  */
 
-import type * as ep from "@ty-ras/endpoint";
 import * as server from "@ty-ras/server";
 import type * as context from "./context.types";
 import * as internal from "./internal";
@@ -18,7 +17,7 @@ import type * as http2 from "node:http2";
  * @returns The Koa middleware which will serve the given endpoints.
  */
 export const createMiddleware = <TStateInfo, TState>(
-  endpoints: ReadonlyArray<ep.AppEndpoint<context.ServerContext, TStateInfo>>,
+  endpoints: server.ServerEndpoints<context.ServerContext, TStateInfo>,
   createState?: context.CreateState<TStateInfo>,
   events?: server.ServerEventHandler<
     server.GetContext<context.ServerContext>,
